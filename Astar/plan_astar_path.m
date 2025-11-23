@@ -101,13 +101,30 @@ function waypoints = plan_astar_path(start_pos, goal_pos, obstacles, obsR, cfg)
         v1 = v1 / norm(v1);
         v2 = v2 / norm(v2);
         
+        % Calculate angle change properly
+        dot_prod = dot(v1, v2);
+        dot_prod = max(-1, min(1, dot_prod));  % Clamp to avoid numerical issues
+        angle_change = acos(dot_prod);
+        
         % If direction changes significantly, keep this point
-        % 10 degrees threshold to filter out grid artifacts
-        if abs(acos(max(-1, min(1, dot(v1, v2))))) > deg2rad(10)
+        % Increased threshold to 15 degrees to filter out more grid artifacts
+        if angle_change > deg2rad(15)
             simplified = [simplified; path(i,:)];
         end
     end
     
     simplified = [simplified; path(end,:)];
-    waypoints = simplified;
+    
+    % Additional pass: ensure minimum spacing between waypoints for Dubins
+    min_spacing = cfg.grid_resolution * 1.2;  % At least 1.2 grid cells apart
+    final_waypoints = [simplified(1,:)];
+    
+    for i = 2:size(simplified,1)
+        dist_from_last = norm(simplified(i,:) - final_waypoints(end,:));
+        if dist_from_last >= min_spacing || i == size(simplified,1)
+            final_waypoints = [final_waypoints; simplified(i,:)];
+        end
+    end
+    
+    waypoints = final_waypoints;
 end

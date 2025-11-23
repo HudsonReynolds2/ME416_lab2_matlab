@@ -23,8 +23,8 @@ function cfg = limo_config()
     cfg.step = 0.05;                     % [m] Dubins path interpolation step
     
     % A* grid-based planning parameters
-    cfg.grid_resolution = 0.30;          % [m] Finer grid for narrow passages
-    cfg.planning_inflation = 0.25;       % [m] Reduced inflation - robot handles tight spaces
+    cfg.grid_resolution = 0.40;          % [m] Balanced grid - not too fine for Dubins
+    cfg.planning_inflation = 0.35;       % [m] Moderate inflation for safety
     
     %% ======================= CONTROL GAINS =======================
     cfg.K_ey = 8.0;                      % Cross-track error gain
@@ -54,11 +54,11 @@ function cfg = limo_config()
     cfg.mazes(2).name = "3x3 Grid Maze";
     interior_obs = [
         1.0 1.0; 2.5 1.0; 4.0 1.0;
-        0.0 2.5; 1.5 2.5; 3.0 2.5;
+        0.5 2.5; 1.5 2.5; 3.0 2.5;  % Shifted from edge
         1.0 4.0; 2.5 4.0; 4.0 4.0
     ];
-    % Dense boundary walls outside playable area
-    wall_spacing = 0.2;
+    % Sparser boundary walls outside playable area
+    wall_spacing = 0.35;  % Increased spacing
     x_wall = (-0.5:wall_spacing:5.5)';
     y_wall = (-0.5:wall_spacing:5.0)';
     bottom = [x_wall, ones(size(x_wall))*-0.5];
@@ -73,13 +73,13 @@ function cfg = limo_config()
     % Maze 3: Complex Path with boundary walls
     cfg.mazes(3).name = "Complex Path Maze";
     interior_obs = [
-        0.0 1.0; 0.5 1.0; 1.0 1.0; 1.0 1.5; 1.0 2.0; 1.5 2.0; 2.0 2.0;
+        0.5 1.0; 0.5 1.0; 1.0 1.0; 1.0 1.5; 1.0 2.0; 1.5 2.0; 2.0 2.0;  % Shifted from edge
         2.5 2.0; 2.5 2.5; 2.5 3.0; 2.5 3.5; 3.0 3.5; 3.5 3.5; 4.0 3.5;
-        4.0 3.0; 4.0 2.5; 4.0 2.0; 4.0 1.5; 4.0 1.0; 0.0 3.5; 0.5 3.5;
-        1.0 3.5; 2.5 0.0; 2.5 0.5
+        4.0 3.0; 4.0 2.5; 4.0 2.0; 4.0 1.5; 4.0 1.0; 0.5 3.5; 0.5 3.5;  % Shifted from edge
+        1.0 3.5; 2.5 0.5; 2.5 0.5  % Shifted from edge
     ];
-    % Dense boundary walls
-    wall_spacing = 0.2;
+    % Sparser boundary walls
+    wall_spacing = 0.35;  % Increased spacing
     x_wall = (-0.7:wall_spacing:5.2)';
     y_wall = (-0.7:wall_spacing:4.7)';
     bottom = [x_wall, ones(size(x_wall))*-0.7];

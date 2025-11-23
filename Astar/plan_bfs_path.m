@@ -85,11 +85,11 @@ function path = bfs_search(map, start, goal)
     queue = {start};
     visited(toKey(start)) = true;
     
-    % 4-connected neighbors (faster than 8-connected)
-    dirs = [-1 0; 1 0; 0 -1; 0 1];
+    % 8-connected neighbors for more direct paths
+    dirs = [-1 0; 1 0; 0 -1; 0 1; -1 -1; -1 1; 1 -1; 1 1];
     
     found = false;
-    max_iters = 20000;  % Increased limit for complex mazes
+    max_iters = 10000;  % Reduced limit
     iters = 0;
     
     while ~isempty(queue) && iters < max_iters
@@ -155,6 +155,11 @@ end
 
 function waypoints = simplify_path(path, res)
     % Remove collinear points
+    if size(path,1) <= 2
+        waypoints = path;
+        return;
+    end
+    
     simplified = [path(1,:)];
     
     for i = 2:(size(path,1)-1)
@@ -168,10 +173,20 @@ function waypoints = simplify_path(path, res)
         v1 = v1 / norm(v1);
         v2 = v2 / norm(v2);
         
-        if abs(acos(max(-1, min(1, dot(v1, v2))))) > deg2rad(10)
+        % Calculate angle change
+        dot_prod = dot(v1, v2);
+        dot_prod = max(-1, min(1, dot_prod));  % Clamp to avoid numerical issues
+        angle_change = acos(dot_prod);
+        
+        if angle_change > deg2rad(10)
             simplified = [simplified; path(i,:)];
         end
     end
     
-    waypoints = [simplified; path(end,:)];
+    % Always add the goal point
+    if size(path,1) > 0
+        waypoints = [simplified; path(end,:)];
+    else
+        waypoints = simplified;
+    end
 end
