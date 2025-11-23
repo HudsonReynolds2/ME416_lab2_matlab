@@ -23,8 +23,8 @@ function cfg = limo_config()
     cfg.step = 0.05;                     % [m] Dubins path interpolation step
     
     % A* grid-based planning parameters
-    cfg.grid_resolution = 0.55;          % [m] Grid cell size for A* (coarser = smoother)
-    cfg.planning_inflation = 0.35;       % [m] Obstacle inflation for path planning (reduced for tight mazes)
+    cfg.grid_resolution = 0.30;          % [m] Finer grid for narrow passages
+    cfg.planning_inflation = 0.25;       % [m] Reduced inflation - robot handles tight spaces
     
     %% ======================= CONTROL GAINS =======================
     cfg.K_ey = 8.0;                      % Cross-track error gain
@@ -50,28 +50,46 @@ function cfg = limo_config()
     cfg.mazes(1).goal_pos = [5.0, 4.5];
     cfg.mazes(1).arena_bounds = [-0.5 5.5 -1.0 6.0];
     
-    % Maze 2: 3x3 Grid (no boundary walls - map bounds prevent escape)
+    % Maze 2: 3x3 Grid with proper boundary walls
     cfg.mazes(2).name = "3x3 Grid Maze";
-    cfg.mazes(2).obs = [
+    interior_obs = [
         1.0 1.0; 2.5 1.0; 4.0 1.0;
         0.0 2.5; 1.5 2.5; 3.0 2.5;
         1.0 4.0; 2.5 4.0; 4.0 4.0
     ];
-    cfg.mazes(2).start_pos = [0.0, 0.0];
-    cfg.mazes(2).goal_pos = [5.0, 4.5];
-    cfg.mazes(2).arena_bounds = [0.0 5.0 0.0 4.5];  % Tight bounds prevent escape
+    % Dense boundary walls outside playable area
+    wall_spacing = 0.2;
+    x_wall = (-0.5:wall_spacing:5.5)';
+    y_wall = (-0.5:wall_spacing:5.0)';
+    bottom = [x_wall, ones(size(x_wall))*-0.5];
+    top = [x_wall, ones(size(x_wall))*5.0];
+    left = [ones(size(y_wall))*-0.5, y_wall];
+    right = [ones(size(y_wall))*5.5, y_wall];
+    cfg.mazes(2).obs = [interior_obs; bottom; top; left; right];
+    cfg.mazes(2).start_pos = [0.3, 0.3];
+    cfg.mazes(2).goal_pos = [4.7, 4.2];
+    cfg.mazes(2).arena_bounds = [-0.7 5.7 -0.7 5.2];
     
-    % Maze 3: Complex Path
+    % Maze 3: Complex Path with boundary walls
     cfg.mazes(3).name = "Complex Path Maze";
-    cfg.mazes(3).obs = [
+    interior_obs = [
         0.0 1.0; 0.5 1.0; 1.0 1.0; 1.0 1.5; 1.0 2.0; 1.5 2.0; 2.0 2.0;
         2.5 2.0; 2.5 2.5; 2.5 3.0; 2.5 3.5; 3.0 3.5; 3.5 3.5; 4.0 3.5;
         4.0 3.0; 4.0 2.5; 4.0 2.0; 4.0 1.5; 4.0 1.0; 0.0 3.5; 0.5 3.5;
         1.0 3.5; 2.5 0.0; 2.5 0.5
     ];
-    cfg.mazes(3).start_pos = [0.0, 0.0];
-    cfg.mazes(3).goal_pos = [0.0, 1.5];
-    cfg.mazes(3).arena_bounds = [-0.5 5.0 -0.5 4.5];
+    % Dense boundary walls
+    wall_spacing = 0.2;
+    x_wall = (-0.7:wall_spacing:5.2)';
+    y_wall = (-0.7:wall_spacing:4.7)';
+    bottom = [x_wall, ones(size(x_wall))*-0.7];
+    top = [x_wall, ones(size(x_wall))*4.7];
+    left = [ones(size(y_wall))*-0.7, y_wall];
+    right = [ones(size(y_wall))*5.2, y_wall];
+    cfg.mazes(3).obs = [interior_obs; bottom; top; left; right];
+    cfg.mazes(3).start_pos = [0.3, 0.3];
+    cfg.mazes(3).goal_pos = [0.3, 2.0];
+    cfg.mazes(3).arena_bounds = [-0.9 5.4 -0.9 4.9];
     
     % Default maze selection
     cfg.maze_select = 1;  % Default to maze 1

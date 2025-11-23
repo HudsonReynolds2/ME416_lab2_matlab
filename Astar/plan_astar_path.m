@@ -31,6 +31,11 @@ function waypoints = plan_astar_path(start_pos, goal_pos, obstacles, obsR, cfg)
         setOccupancy(map, coords, 1);
     end
 
+    % CRITICAL FIX: Force start and goal cells to be free
+    % Only clear the exact cells, not large regions
+    setOccupancy(map, start_pos, 0, 'world');
+    setOccupancy(map, goal_pos, 0, 'world');
+
     % Check start/goal are inside map bounds
     if start_pos(1) < xmin || start_pos(1) > xmax || ...
        start_pos(2) < ymin || start_pos(2) > ymax

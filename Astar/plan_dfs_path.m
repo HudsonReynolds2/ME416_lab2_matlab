@@ -29,11 +29,12 @@ function waypoints = plan_dfs_path(start_pos, goal_pos, obstacles, obsR, cfg)
         setOccupancy(map, coords, 1);
     end
     
-    % Clear start/goal regions
-    clearance = res * 1.5;
+    % Clear start/goal regions (larger clearance)
+    clearance = res * 2.0;  % Increased clearance
     setOccupancy(map, start_pos, 0, 'world');
     setOccupancy(map, goal_pos, 0, 'world');
     
+    % Clear surrounding cells
     [X_local, Y_local] = meshgrid(start_pos(1)-clearance:res:start_pos(1)+clearance, ...
                                    start_pos(2)-clearance:res:start_pos(2)+clearance);
     start_region = [X_local(:), Y_local(:)];
