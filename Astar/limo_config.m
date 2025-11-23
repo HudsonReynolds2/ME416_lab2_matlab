@@ -50,30 +50,16 @@ function cfg = limo_config()
     cfg.mazes(1).goal_pos = [5.0, 4.5];
     cfg.mazes(1).arena_bounds = [-0.5 5.5 -1.0 6.0];
     
-    % Maze 2: 3x3 Grid with boundary walls
+    % Maze 2: 3x3 Grid (no boundary walls - map bounds prevent escape)
     cfg.mazes(2).name = "3x3 Grid Maze";
-    % Interior obstacles
-    interior_obs = [
+    cfg.mazes(2).obs = [
         1.0 1.0; 2.5 1.0; 4.0 1.0;
         0.0 2.5; 1.5 2.5; 3.0 2.5;
         1.0 4.0; 2.5 4.0; 4.0 4.0
     ];
-    % Boundary walls far from playable area
-    boundary_spacing = 0.4;
-    % Bottom wall (y = -0.4)
-    x_range = -0.4:boundary_spacing:5.4;
-    bottom_wall = [x_range', ones(length(x_range), 1) * -0.4];
-    % Top wall (y = 5.0)
-    top_wall = [x_range', ones(length(x_range), 1) * 5.0];
-    % Left wall (x = -0.4)
-    y_range = -0.4:boundary_spacing:5.0;
-    left_wall = [ones(length(y_range), 1) * -0.4, y_range'];
-    % Right wall (x = 5.4)
-    right_wall = [ones(length(y_range), 1) * 5.4, y_range'];
-    cfg.mazes(2).obs = [interior_obs; bottom_wall; top_wall; left_wall; right_wall];
     cfg.mazes(2).start_pos = [0.0, 0.0];
     cfg.mazes(2).goal_pos = [5.0, 4.5];
-    cfg.mazes(2).arena_bounds = [-0.5 5.5 -0.5 5.0];
+    cfg.mazes(2).arena_bounds = [0.0 5.0 0.0 4.5];  % Tight bounds prevent escape
     
     % Maze 3: Complex Path
     cfg.mazes(3).name = "Complex Path Maze";

@@ -136,9 +136,19 @@ function path = dfs_search(map, start, goal)
     % Reconstruct path
     path = goal;
     current = goal;
-    while ~all(current == start)
-        current = parent(toKey(current));
+    max_path_len = 1000;  % Prevent infinite loops
+    path_len = 1;
+    
+    while ~(current(1) == start(1) && current(2) == start(2)) && path_len < max_path_len
+        key = toKey(current);
+        if ~parent.isKey(key)
+            % Path reconstruction failed
+            path = [];
+            return;
+        end
+        current = parent(key);
         path = [current; path];
+        path_len = path_len + 1;
     end
 end
 
