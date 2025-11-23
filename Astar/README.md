@@ -1,0 +1,226 @@
+# LIMO Robot Navigation - Refactored Code
+
+## Major Changes
+
+### 1. **Removed ALL Y-axis Flipping**
+- **Problem**: Old code flipped Y coordinates in visualization (`-y`) which was inconsistent with calibration and control
+- **Solution**: Everything now uses maze coordinates directly from calibration (Transform 3)
+- **Impact**: 
+  - Visualization matches physical maze layout
+  - No mental gymnastics needed to understand coordinates
+  - Calibration, control, and visualization all use same coordinate system
+
+### 2. **Waypoints Now Auto-Generated with A***
+- **Problem**: Waypoints were hardcoded in config file, not based on actual maze geometry
+- **Solution**: Implemented A* grid-based path planner
+- **Impact**:
+  - Only need to specify START (0,0) and GOAL (5.0, 4.5)
+  - Path automatically navigates around obstacles
+  - Easier to adapt to different maze configurations
+
+### 3. **Coordinate System Clarity**
+After calibration (Transform 3):
+```
+MoCap Frame      →      Maze Frame
+x_mocap          →      x_maze
+z_mocap          →      y_maze
+yaw_mocap        →      theta_maze (relative to origin)
+```
+
+Robot at (0,0) in maze after calibration = origin position set in `calibrate_limo.m`
+
+## Files Overview
+
+### Core Configuration
+- **`limo_config.m`**: Central configuration (no hardcoded waypoints anymore)
+  - Robot parameters (wheelbase, speed limits, etc.)
+  - Control gains (K_ey, K_etheta)
+  - Obstacle positions
+  - START and GOAL positions only
+  - A* planning parameters (grid resolution, inflation)
+
+### Path Planning
+- **`plan_astar_path.m`**: A* grid-based planner
+  - Generates waypoints from start to goal
+  - Avoids obstacles with inflation radius
+  - Simplifies path by removing redundant waypoints
+  - Returns Mx2 array of waypoint positions
+
+### Utilities
+- **`limo_utils.m`**: All shared functions (NO Y-FLIPPING)
+  - `get_mocap_pose()` - Read OptiTrack data
+  - `transform_pose()` - MoCap → Maze coordinates
+  - `build_dubins_path()` - Smooth Dubins curves between waypoints
+  - `sendRobotCmd()`, `stopRobot()` - Robot control
+  - `plot_arena()`, `plot_obstacles()`, `plot_path()` - Visualization
+  - All visualization uses maze coordinates directly
+
+### Main Scripts
+- **`calibrate_limo2_good.m`**: Calibration (unchanged, already correct)
+  - Determines Transform 3 by driving forward
+  - Sets maze origin (0,0)
+  
+- **`manual_drive_logger.m`**: Manual driving with WASD keys
+  - Path generated automatically with A*
+  - No Y-flipping in visualization
+  - Logs all data for analysis
+
+- **`test_path_visualization.m`**: Test path planning offline
+  - Visualizes A* waypoints and Dubins path
+  - Shows curvature and heading plots
+  - No robot needed - good for debugging
+
+## Usage Workflow
+
+### 1. Calibration (One Time)
+```matlab
+% Place robot at maze origin (0,0) facing +X direction
+calibrate_limo2_good
+```
+This creates `limo_calibration.mat` with Transform 3 parameters.
+
+### 2. Test Path Planning (Optional)
+```matlab
+% Visualize path without robot
+test_path_visualization
+```
+This shows:
+- A* waypoints through maze
+- Smooth Dubins path
+- Curvature analysis
+- Heading profile
+
+### 3. Manual Drive
+```matlab
+% Drive robot manually with logging
+manual_drive_logger
+```
+Controls: W/S (forward/back), A/D (turn), SPACE (stop), Q (quit)
+
+### 4. Autonomous Navigation
+```matlab
+% Run autonomous controller (to be updated)
+ekf_lqr_dubins  % You'll need to update this script similarly
+```
+
+## Key Parameters to Tune
+
+### In `limo_config.m`:
+
+**Control Gains:**
+```matlab
+cfg.K_ey = 8.0;        % Lateral error gain
+cfg.K_etheta = 3.0;    % Heading error gain
+cfg.LOOKAHEAD = 0.40;  % Lookahead distance [m]
+```
+
+**Path Planning:**
+```matlab
+cfg.R_min = 0.40;                % Minimum turn radius [m]
+cfg.grid_resolution = 0.1;       % A* grid size [m]
+cfg.planning_inflation = 0.35;   % Safety margin around obstacles [m]
+```
+
+**Obstacle Layout:**
+```matlab
+cfg.obs = [
+    1.5 0.0; 1.5 0.5; 1.5 1.0; 1.5 1.5; 1.5 2.0;     % Left wall
+    3.3 3.0; 3.3 3.5; 3.3 4.0; 3.3 4.5; 3.3 5.0; 3.3 5.5  % Right wall
+];
+cfg.obsR = 0.30;  % Obstacle radius [m]
+```
+
+**Start/Goal:**
+```matlab
+cfg.start_pos = [0.0, 0.0];  % Maze origin (from calibration)
+cfg.goal_pos = [5.0, 4.5];   % End of maze
+```
+
+## Coordinate System Notes
+
+### Transform 3 (Used by Calibration)
+```
+x_maze = x_mocap - origin_x
+y_maze = z_mocap - origin_z
+theta_maze = yaw_mocap - origin_yaw
+```
+
+### Visualization
+- All plots use maze coordinates directly
+- X-axis: Horizontal across maze
+- Y-axis: Vertical through maze (no flipping)
+- Heading arrows show robot orientation
+
+### Physical Maze Layout
+```
+Y
+^
+|   Goal (5.0, 4.5)
+|        ★
+|        |
+|    [Right Wall]
+|        |
+|    ----+----
+|        |
+|    [Left Wall]
+|        |
+|   Start (0,0) → X
++------------------
+```
+
+## What's Different from Old Code
+
+| Aspect | Old Code | New Code |
+|--------|----------|----------|
+| Waypoints | Hardcoded in config | Generated by A* |
+| Visualization | Y-axis flipped (`-y`) | Direct maze coordinates |
+| Path Planning | Manual waypoint selection | Automatic A* + Dubins |
+| Coordinate System | Inconsistent | Unified maze frame |
+| Config Philosophy | Everything hardcoded | Only start/goal needed |
+
+## Next Steps for Full Autonomy
+
+To update `ekf_lqr_dubins.m` or create new autonomous controller:
+
+1. Use `plan_astar_path()` to generate waypoints
+2. Use `build_dubins_path()` to create smooth reference
+3. Remove any Y-flipping in visualization
+4. Use `transform_pose()` consistently for all coordinate transforms
+5. Test with `test_path_visualization.m` first
+
+## Troubleshooting
+
+**Path collides with obstacles:**
+- Increase `cfg.planning_inflation` in config
+- Check obstacle positions are correct
+- Verify obsR matches physical obstacle size
+
+**Robot orientation wrong:**
+- Check Transform 3 is used (should be set by calibration)
+- Verify robot placed at origin facing +X during calibration
+
+**Visualization looks wrong:**
+- Make sure using new `limo_utils.m` functions
+- Check that NO `-y` appears in plot commands
+- All coordinates should be in maze frame
+
+**A* can't find path:**
+- Check start/goal not inside inflated obstacles
+- Reduce `cfg.planning_inflation` if too conservative
+- Verify arena_bounds in config are correct
+
+## Dependencies
+
+- MATLAB with:
+  - Navigation Toolbox (for A*, dubinsConnection, binaryOccupancyMap)
+  - IoT Toolbox (for MQTT)
+  - Instrument Control Toolbox (for TCP)
+
+## Questions?
+
+All coordinate transforms happen in:
+1. `calibrate_limo2_good.m` - Sets Transform 3
+2. `transform_pose()` in `limo_utils.m` - Applies transform
+3. Everything else uses maze coordinates
+
+No more flipping anywhere!
