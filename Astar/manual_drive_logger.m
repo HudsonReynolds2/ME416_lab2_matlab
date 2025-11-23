@@ -27,7 +27,11 @@ if ~exist(cfg.CALIB_FILE, 'file')
            'Run calibrate_limo.m first with robot at origin']);
 end
 load(cfg.CALIB_FILE, 'calib');
-fprintf('✓ Calibration loaded (Transform %d)\n', calib.transform);
+fprintf('✓ Calibration loaded (Transform %d in file)\n', calib.transform);
+
+% OVERRIDE: Force transform 4 with positive yaw (verified correct)
+calib.transform = 4;
+fprintf('✓ Using Transform 4 with positive yaw (verified)\n');
 
 % Get transform functions
 [toMazeX, toMazeY] = get_transform_functions(calib);
@@ -359,7 +363,7 @@ function [x_maze, y_maze, theta_maze] = transform_pose(pose, calib)
     [toMazeX, toMazeY] = get_transform_functions(calib);
     x_maze = toMazeX(pose.pos(1), pose.pos(3));
     y_maze = toMazeY(pose.pos(1), pose.pos(3));
-    theta_maze = wrapToPi(pose.yaw - calib.origin_yaw);
+    theta_maze = wrapToPi(pose.yaw - calib.origin_yaw);  % Positive yaw
 end
 
 function sendRobotCmd(sock, v, omega, wheelbase)
