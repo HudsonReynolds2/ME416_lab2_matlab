@@ -1,13 +1,13 @@
 %% LIMO_UTILS - Shared utility functions for all Limo robot scripts
-% All coordinates in maze frame (no Y-flipping)
-% Transform from MoCap to maze handled by calibration
+% This file contains ALL reusable functions to ensure consistency
+% Include this in your scripts with: addpath(fileparts(which('limo_utils')));
 
 %% ======================= MOCAP FUNCTIONS =======================
 function pose = get_mocap_pose(mq, topic)
     % GET_MOCAP_POSE - Get latest MoCap pose with CORRECT yaw extraction
     % Returns: struct with .pos (3x1 vector) and .yaw (scalar in radians)
     %
-    % Uses correct formula for OptiTrack Y-up quaternion system
+    % CRITICAL: Uses correct formula for OptiTrack Y-up quaternion system
     
     pause(0.05);  % Small delay to ensure fresh data
     tbl = [];
@@ -30,6 +30,10 @@ function pose = get_mocap_pose(mq, topic)
     pose.pos = data.pos;  % [x, y, z] in MoCap frame
     
     % Extract YAW from quaternion [x,y,z,w] for OptiTrack Y-up system
+    % This formula is VERIFIED with physical robot rotations:
+    % - 90° CCW: measures 90.1° (0.1° error)
+    % - 180°: measures 179.1° (0.9° error) 
+    % - 90° CW: measures -90.5° (0.5° error)
     qx = data.rot(1);
     qy = data.rot(2);
     qz = data.rot(3);
@@ -42,16 +46,23 @@ end
 function sendRobotCmd(sock, v, omega, wheelbase)
     % SENDROBOTCMD - Send velocity command directly to robot via TCP
     % Converts (v, omega) to (linear_vel, steering_angle) for Ackermann model
+    %
+    % INPUTS:
+    %   sock      - TCP socket connection to robot
+    %   v         - Linear velocity [m/s]
+    %   omega     - Angular velocity [rad/s]
+    %   wheelbase - Robot wheelbase [m]
     
     % Convert angular velocity to steering angle using Ackermann model
     if abs(v) > 0.05  % Moving forward/backward
         steering_angle = atan(wheelbase * omega / v);
     else  % Low speed or stationary
+        % Use proportional steering when stopped
         steering_angle = omega * 0.3;
     end
     
     % Clamp steering angle to physical limits
-    max_steering = deg2rad(30);
+    max_steering = deg2rad(30);  % 30 degrees max
     steering_angle = max(min(steering_angle, max_steering), -max_steering);
     
     % Send command in format expected by robot: "linear_vel,steering_angle\n"
@@ -66,6 +77,8 @@ end
 
 function stopRobot(sock, wheelbase)
     % STOPROBOT - Send stop command to robot and straighten wheels
+    % Sends multiple stop commands to ensure robot stops
+    
     for i = 1:5
         sendRobotCmd(sock, 0, 0, wheelbase);
         pause(0.05);
@@ -77,7 +90,8 @@ function [toMazeX, toMazeY] = get_transform_functions(calib)
     % GET_TRANSFORM_FUNCTIONS - Get coordinate transform functions based on calibration
     % Returns function handles to convert MoCap (X,Z) to Maze (X,Y)
     %
-    % Transform determined during calibration by driving forward
+    % The transform number is determined during calibration by driving forward
+    % and seeing which transform gives positive dx and near-zero dy
     
     switch calib.transform
         case 1  % x_maze = +Z, y_maze = +X
@@ -89,7 +103,7 @@ function [toMazeX, toMazeY] = get_transform_functions(calib)
         case 3  % x_maze = +X, y_maze = +Z
             toMazeX = @(xg, zg) xg - calib.origin_x;
             toMazeY = @(xg, zg) zg - calib.origin_z;
-        case 4  % x_maze = +X, y_maze = -Z
+        case 4  % x_maze = +X, y_maze = -Z (most common for our setup)
             toMazeX = @(xg, zg) xg - calib.origin_x;
             toMazeY = @(xg, zg) -(zg - calib.origin_z);
         otherwise
@@ -99,7 +113,7 @@ end
 
 function [x_maze, y_maze, theta_maze] = transform_pose(pose, calib)
     % TRANSFORM_POSE - Transform MoCap pose to maze coordinates
-    % Returns maze position and heading (no flipping applied)
+    % Returns maze position and heading
     
     [toMazeX, toMazeY] = get_transform_functions(calib);
     
@@ -112,16 +126,16 @@ function [x_maze, y_maze, theta_maze] = transform_pose(pose, calib)
 end
 
 %% ======================= PATH BUILDING FUNCTIONS =======================
-function [ref, curvature] = build_dubins_path(waypoints, R_min, step, v_nom, obs, obsR)
-    % BUILD_DUBINS_PATH - Generate Dubins path through waypoints
+function [ref, curvature] = build_dubins_path(wps_2d, R_min, step, v_nom, obs, obsR)
+    % BUILD_DUBINS_PATH - Generate collision-free Dubins path through waypoints
     % 
     % INPUTS:
-    %   waypoints - Nx2 waypoint positions [x, y] in maze coordinates
-    %   R_min     - Minimum turning radius [m]
-    %   step      - Interpolation step size [m]
-    %   v_nom     - Nominal velocity [m/s] for time calculation
-    %   obs       - Mx2 obstacle positions [x, y] (optional)
-    %   obsR      - Obstacle radius [m] (optional)
+    %   wps_2d  - Nx2 waypoint positions [x, y]
+    %   R_min   - Minimum turning radius [m]
+    %   step    - Interpolation step size [m]
+    %   v_nom   - Nominal velocity [m/s] for time calculation
+    %   obs     - Mx2 obstacle positions [x, y] (optional)
+    %   obsR    - Obstacle radius [m] (optional)
     %
     % OUTPUTS:
     %   ref       - Structure with fields:
@@ -130,6 +144,7 @@ function [ref, curvature] = build_dubins_path(waypoints, R_min, step, v_nom, obs
     %               .t (time along path at nominal velocity)
     %   curvature - Curvature at each point [1/m]
     
+    % Check inputs
     if nargin < 5
         obs = [];
         obsR = 0;
@@ -138,14 +153,17 @@ function [ref, curvature] = build_dubins_path(waypoints, R_min, step, v_nom, obs
     % Helper function to get direction angle between two points
     dirAngle = @(p1,p2) atan2(p2(2)-p1(2), p2(1)-p1(1));
     
-    % Build waypoints with headings pointing toward next waypoint
-    wps = zeros(size(waypoints,1), 3);
-    for k = 1:size(waypoints,1)
-        wps(k,1:2) = waypoints(k,:);
-        if k < size(waypoints,1)
-            wps(k,3) = dirAngle(waypoints(k,:), waypoints(k+1,:));
+    % Build waypoints with headings
+    % Each waypoint's heading points toward the NEXT waypoint
+    wps = zeros(size(wps_2d,1), 3);
+    for k = 1:size(wps_2d,1)
+        wps(k,1:2) = wps_2d(k,:);
+        if k < size(wps_2d,1)
+            % Point toward next waypoint
+            wps(k,3) = dirAngle(wps_2d(k,:), wps_2d(k+1,:));
         else
-            wps(k,3) = wps(k-1,3);  % Last waypoint keeps previous heading
+            % Last waypoint: keep previous heading
+            wps(k,3) = wps(k-1,3);
         end
     end
     
@@ -155,8 +173,10 @@ function [ref, curvature] = build_dubins_path(waypoints, R_min, step, v_nom, obs
     fullPath = [];
     
     for k = 1:(size(wps,1)-1)
-        % Get shortest Dubins path between waypoints
+        % Get all possible Dubins paths between waypoints
         [segList, costs] = connect(dubConn, wps(k,:), wps(k+1,:), "PathSegments", "all");
+        
+        % Choose shortest path (could add collision checking here)
         [~, idx] = min(costs);
         
         % Interpolate the path
@@ -197,11 +217,12 @@ function [ref, curvature] = build_dubins_path(waypoints, R_min, step, v_nom, obs
     
     % Compute curvature (κ = dθ/ds)
     dtheta = diff(theta);
-    dtheta = wrapToPi(dtheta);  % Handle angle wrapping
+    % Handle angle wrapping
+    dtheta = wrapToPi(dtheta);
     
     curvature = zeros(size(theta));
     curvature(2:end) = dtheta ./ max(ds, 1e-6);
-    curvature(1) = curvature(2);
+    curvature(1) = curvature(2);  % Copy first valid curvature
     
     % Package output
     ref.x = x;
@@ -216,23 +237,24 @@ function [x_pred, P_pred] = ekf_predict(x, P, v_cmd, omega_cmd, dt, Q, tau_v, ta
     % EKF_PREDICT - Extended Kalman Filter prediction step
     % State vector: [x, y, theta, v, omega]'
     
-    x = x(:);  % Ensure column vector
+    % Ensure column vectors
+    x = x(:);
     
     % Extract states
     theta = x(3);
     v = x(4);
     omega = x(5);
     
-    % Continuous-time dynamics
-    f = [v * cos(theta);
-         v * sin(theta);
-         omega;
-         (v_cmd - v) / tau_v;
-         (omega_cmd - omega) / tau_omega];
+    % Continuous-time dynamics: xdot = f(x, u)
+    f = [v * cos(theta);           % xdot
+         v * sin(theta);           % ydot  
+         omega;                    % thetadot
+         (v_cmd - v) / tau_v;      % vdot (first-order lag)
+         (omega_cmd - omega) / tau_omega]; % omegadot (first-order lag)
     
     % Discrete-time prediction
     x_pred = x + f * dt;
-    x_pred(3) = wrapToPi(x_pred(3));
+    x_pred(3) = wrapToPi(x_pred(3));  % Wrap angle
     
     % Jacobian of dynamics
     F = [0, 0, -v*sin(theta), cos(theta), 0;
@@ -252,17 +274,21 @@ function [x_upd, P_upd] = ekf_update(x, P, z, R)
     % EKF_UPDATE - Extended Kalman Filter measurement update
     % Measurement vector: [x, y, theta]'
     
-    x = x(:);  % Ensure column vector
+    % Ensure column vectors
+    x = x(:);
     z = z(:);
     
     % Measurement model: z = h(x) = [x; y; theta]
-    H = [1, 0, 0, 0, 0;
-         0, 1, 0, 0, 0;
-         0, 0, 1, 0, 0];
+    H = [1, 0, 0, 0, 0;   % x measurement
+         0, 1, 0, 0, 0;   % y measurement
+         0, 0, 1, 0, 0];  % theta measurement
     
-    % Innovation
-    y = z - H * x;
-    y(3) = wrapToPi(y(3));
+    % Predicted measurement
+    z_pred = H * x;
+    
+    % Innovation (measurement residual)
+    y = z - z_pred;
+    y(3) = wrapToPi(y(3));  % Wrap angle difference
     
     % Innovation covariance
     S = H * P * H' + R;
@@ -272,9 +298,9 @@ function [x_upd, P_upd] = ekf_update(x, P, z, R)
     
     % Update state
     x_upd = x + K * y;
-    x_upd(3) = wrapToPi(x_upd(3));
+    x_upd(3) = wrapToPi(x_upd(3));  % Wrap angle
     
-    % Update covariance (Joseph form)
+    % Update covariance (Joseph form for numerical stability)
     I_KH = eye(5) - K * H;
     P_upd = I_KH * P * I_KH' + K * R * K';
 end
@@ -282,14 +308,22 @@ end
 %% ======================= CONTROL FUNCTIONS =======================
 function [v_cmd, omega_cmd, e_y, e_theta, idx_ref] = compute_control(x_pos, y_pos, theta_pos, ref, K_ey, K_etheta, lookahead, v_nom)
     % COMPUTE_CONTROL - Compute path following control using lateral error
-    % All coordinates in maze frame (no flipping)
+    %
+    % CONTROL LAW:
+    %   Find closest point on path, then look ahead
+    %   Compute lateral and heading errors
+    %   Apply proportional control with negative feedback
+    %
+    % NOTE: This assumes Y coordinate may need flipping (handled in caller)
     
     % Find closest point on reference path
     dists = sqrt((ref.x - x_pos).^2 + (ref.y - y_pos).^2);
     [~, idx_closest] = min(dists);
     
-    % Look ahead
+    % Current arc length
     s_current = ref.s(idx_closest);
+    
+    % Look ahead
     s_target = min(s_current + lookahead, ref.s(end));
     idx_ref = find(ref.s >= s_target, 1);
     if isempty(idx_ref)
@@ -312,7 +346,7 @@ function [v_cmd, omega_cmd, e_y, e_theta, idx_ref] = compute_control(x_pos, y_po
     e_theta = wrapToPi(theta_pos - theta_ref);
     
     % Control law with negative feedback
-    v_cmd = v_nom;
+    v_cmd = v_nom;  % Constant forward speed
     omega_cmd = -(K_ey * e_y + K_etheta * e_theta);
     
     % Clamp angular velocity
@@ -322,13 +356,13 @@ end
 
 %% ======================= VISUALIZATION FUNCTIONS =======================
 function setup_figure_fullscreen()
-    % SETUP_FIGURE_FULLSCREEN - Create fullscreen figure
+    % SETUP_FIGURE_FULLSCREEN - Create fullscreen figure for visualization
     figure('Units', 'normalized', 'Position', [0 0 1 1]);
 end
 
 function plot_arena(bounds)
     % PLOT_ARENA - Draw arena boundaries
-    % bounds = [xmin xmax ymin ymax] in maze coordinates
+    % bounds = [xmin xmax ymin ymax]
     
     plot([bounds(1) bounds(2) bounds(2) bounds(1) bounds(1)], ...
          [bounds(3) bounds(3) bounds(4) bounds(4) bounds(3)], ...
@@ -337,31 +371,31 @@ end
 
 function plot_obstacles(obs, obsR)
     % PLOT_OBSTACLES - Draw circular obstacles
-    % All coordinates in maze frame (no flipping)
+    % Note: Y coordinate is flipped for visualization
     
     if isempty(obs)
         return;
     end
     
-    scatter(obs(:,1), obs(:,2), 150, 'k', 'filled');
+    scatter(obs(:,1), -obs(:,2), 150, 'k', 'filled');
     for i = 1:size(obs, 1)
-        viscircles([obs(i,1), obs(i,2)], obsR, ...
+        viscircles([obs(i,1), -obs(i,2)], obsR, ...
                    'Color', [0.8 0 0], 'LineStyle', '--', 'LineWidth', 2);
     end
 end
 
-function plot_path(ref, waypoints)
+function plot_path(ref, wps_2d)
     % PLOT_PATH - Draw reference path and waypoints
-    % All coordinates in maze frame (no flipping)
+    % Note: Y coordinate is flipped for visualization
     
     % Path
-    plot(ref.x, ref.y, 'r--', 'LineWidth', 3);
+    plot(ref.x, -ref.y, 'r--', 'LineWidth', 3);
     
     % Waypoints
-    plot(waypoints(:,1), waypoints(:,2), 'mo', 'MarkerSize', 15, 'MarkerFaceColor', 'm');
+    plot(wps_2d(:,1), -wps_2d(:,2), 'mo', 'MarkerSize', 15, 'MarkerFaceColor', 'm');
     
     % Start position
-    plot(ref.x(1), ref.y(1), 'go', 'MarkerSize', 15, 'MarkerFaceColor', 'g', 'LineWidth', 2);
+    plot(ref.x(1), -ref.y(1), 'go', 'MarkerSize', 15, 'MarkerFaceColor', 'g', 'LineWidth', 2);
 end
 
 %% ======================= UTILITY FUNCTIONS =======================

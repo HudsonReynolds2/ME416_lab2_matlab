@@ -359,7 +359,7 @@ function [x_maze, y_maze, theta_maze] = transform_pose(pose, calib)
     [toMazeX, toMazeY] = get_transform_functions(calib);
     x_maze = toMazeX(pose.pos(1), pose.pos(3));
     y_maze = toMazeY(pose.pos(1), pose.pos(3));
-    theta_maze = wrapToPi(pose.yaw - calib.origin_yaw);
+    theta_maze = wrapToPi(-(pose.yaw - calib.origin_yaw));  % Negated to fix left/right
 end
 
 function sendRobotCmd(sock, v, omega, wheelbase)

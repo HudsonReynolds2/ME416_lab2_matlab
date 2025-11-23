@@ -1,114 +1,98 @@
 function waypoints = plan_astar_path(start_pos, goal_pos, obstacles, obsR, cfg)
     %% PLAN_ASTAR_PATH - Generate waypoints using A* grid-based planning
-    % 
-    % INPUTS:
-    %   start_pos   - [x, y] start position in maze coordinates
-    %   goal_pos    - [x, y] goal position in maze coordinates
-    %   obstacles   - Nx2 array of obstacle positions
-    %   obsR        - Obstacle radius [m]
-    %   cfg         - Configuration struct with grid_resolution, planning_inflation, arena_bounds
-    %
-    % OUTPUTS:
-    %   waypoints   - Mx2 array of waypoint positions [x, y] from start to goal
-    
-    fprintf('\n=== A* PATH PLANNING ===\n');
-    
-    % Extract parameters
+
     res = cfg.grid_resolution;
     inflation = cfg.planning_inflation;
     bounds = cfg.arena_bounds;  % [xmin xmax ymin ymax]
-    
-    % Create occupancy grid
+
     xmin = bounds(1); xmax = bounds(2);
     ymin = bounds(3); ymax = bounds(4);
-    
+
     width = xmax - xmin;
     height = ymax - ymin;
-    
-    % Create binary occupancy map
+
     map = binaryOccupancyMap(width, height, 1/res);
     map.GridLocationInWorld = [xmin, ymin];
-    
-    % Inflate obstacles
+
     inflate_radius = obsR + inflation;
-    
-    fprintf('Grid: %.1fx%.1f m, resolution: %.2f m\n', width, height, res);
-    fprintf('Obstacle inflation: %.2f m\n', inflate_radius);
-    
-    % Mark obstacle cells
+
+    % Build a grid of world coordinates once
+    [X, Y] = meshgrid(xmin:res:xmax, ymin:res:ymax);
+
+    occ = zeros(size(X));
     for i = 1:size(obstacles, 1)
-        obs_x = obstacles(i, 1);
-        obs_y = obstacles(i, 2);
-        
-        % Create circular obstacle
-        [X, Y] = meshgrid(xmin:res:xmax, ymin:res:ymax);
-        dist = sqrt((X - obs_x).^2 + (Y - obs_y).^2);
-        obstacle_mask = dist <= inflate_radius;
-        
-        % Set occupancy
-        for ix = 1:size(X, 2)
-            for iy = 1:size(Y, 1)
-                if obstacle_mask(iy, ix)
-                    setOccupancy(map, [X(iy, ix), Y(iy, ix)], 1);
-                end
-            end
-        end
+        dist = sqrt((X - obstacles(i,1)).^2 + (Y - obstacles(i,2)).^2);
+        occ = occ | (dist <= inflate_radius);
     end
-    
-    % Verify start and goal are not in obstacles
-    if getOccupancy(map, start_pos)
+
+    % Set occupancy using vectorized call
+    coords = [X(occ==1), Y(occ==1)];
+    if ~isempty(coords)
+        setOccupancy(map, coords, 1);
+    end
+
+    % Check start/goal are inside map bounds
+    if start_pos(1) < xmin || start_pos(1) > xmax || ...
+       start_pos(2) < ymin || start_pos(2) > ymax
+        error('Start position is outside map bounds.');
+    end
+    if goal_pos(1) < xmin || goal_pos(1) > xmax || ...
+       goal_pos(2) < ymin || goal_pos(2) > ymax
+        error('Goal position is outside map bounds.');
+    end
+
+    if getOccupancy(map, start_pos, 'world')
         error('Start position (%.2f, %.2f) is inside obstacle!', start_pos(1), start_pos(2));
     end
-    if getOccupancy(map, goal_pos)
+    if getOccupancy(map, goal_pos, 'world')
         error('Goal position (%.2f, %.2f) is inside obstacle!', goal_pos(1), goal_pos(2));
     end
-    
-    % Create planner
+
     planner = plannerAStarGrid(map);
-    
-    % Plan path
-    fprintf('Planning from (%.2f, %.2f) to (%.2f, %.2f)...\n', ...
-            start_pos(1), start_pos(2), goal_pos(1), goal_pos(2));
-    
-    [path, solnInfo] = plan(planner, start_pos, goal_pos);
-    
-    if ~solnInfo.IsPathFound
-        error('A* could not find a path from start to goal!');
+
+    % Plan in world coordinates — this avoids needing integer grid indices
+    [path, solnInfo] = plan(planner, start_pos, goal_pos, 'world');
+
+    % Determine whether a path was found (compatible across MATLAB versions)
+    foundPath = false;
+    if isstruct(solnInfo) && isfield(solnInfo, 'IsPathFound')
+        foundPath = logical(solnInfo.IsPathFound);
+    elseif istable(solnInfo) && any(strcmp(solnInfo.Properties.VariableNames,'IsPathFound'))
+        foundPath = logical(solnInfo.IsPathFound(1));
+    else
+        % Fallback: if path is nonempty treat as found
+        foundPath = ~isempty(path) && size(path,1) > 0;
     end
     
-    fprintf('✓ Path found: %d grid cells\n', size(path, 1));
+    if ~foundPath
+        error('A* could not find a path from start to goal!');
+    end
+
+    % Simplify A* path - remove collinear points
+    % A* gives us grid-aligned steps, we want just the corner points
+    simplified = [path(1,:)];
     
-    % Simplify path - remove redundant waypoints
-    % Keep points where direction changes significantly
-    waypoints = [start_pos];
-    
-    if size(path, 1) > 2
-        for i = 2:(size(path, 1)-1)
-            % Direction vectors
-            dir1 = path(i, :) - path(i-1, :);
-            dir2 = path(i+1, :) - path(i, :);
-            
-            % Normalize
-            dir1 = dir1 / norm(dir1);
-            dir2 = dir2 / norm(dir2);
-            
-            % If direction changes more than 15 degrees, keep waypoint
-            angle_change = acos(dot(dir1, dir2));
-            if angle_change > deg2rad(15)
-                waypoints = [waypoints; path(i, :)];
-            end
+    for i = 2:(size(path,1)-1)
+        % Vector from last kept point to current point
+        v1 = path(i,:) - simplified(end,:);
+        % Vector from current to next
+        v2 = path(i+1,:) - path(i,:);
+        
+        if norm(v1) < 1e-6 || norm(v2) < 1e-6
+            continue;
+        end
+        
+        % Normalize
+        v1 = v1 / norm(v1);
+        v2 = v2 / norm(v2);
+        
+        % If direction changes significantly, keep this point
+        % 10 degrees threshold to filter out grid artifacts
+        if abs(acos(max(-1, min(1, dot(v1, v2))))) > deg2rad(10)
+            simplified = [simplified; path(i,:)];
         end
     end
     
-    % Always include goal
-    waypoints = [waypoints; goal_pos];
-    
-    fprintf('✓ Simplified to %d waypoints\n', size(waypoints, 1));
-    
-    % Print waypoints
-    fprintf('\nWaypoints:\n');
-    for i = 1:size(waypoints, 1)
-        fprintf('  %d: (%.2f, %.2f)\n', i, waypoints(i, 1), waypoints(i, 2));
-    end
-    
+    simplified = [simplified; path(end,:)];
+    waypoints = simplified;
 end

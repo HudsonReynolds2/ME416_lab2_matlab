@@ -19,12 +19,12 @@ function cfg = limo_config()
     cfg.dt_control = 0.05;               % [s] Control loop period (20 Hz)
     
     %% ======================= PATH PLANNING PARAMETERS =======================
-    cfg.R_min = 0.40;                    % [m] Minimum turning radius for Dubins
+    cfg.R_min = 0.30;                    % [m] Minimum turning radius for Dubins
     cfg.step = 0.05;                     % [m] Dubins path interpolation step
     
     % A* grid-based planning parameters
-    cfg.grid_resolution = 0.1;           % [m] Grid cell size for A*
-    cfg.planning_inflation = 0.35;       % [m] Obstacle inflation for path planning (robot radius + safety)
+    cfg.grid_resolution = 0.5;           % [m] Grid cell size for A* (coarser = smoother)
+    cfg.planning_inflation = 0.50;       % [m] Obstacle inflation for path planning
     
     %% ======================= CONTROL GAINS =======================
     cfg.K_ey = 8.0;                      % Cross-track error gain
