@@ -42,10 +42,20 @@ function waypoints = plan_astar_path(start_pos, goal_pos, obstacles, obsR, cfg)
     end
 
     if getOccupancy(map, start_pos, 'world')
-        error('Start position (%.2f, %.2f) is inside obstacle!', start_pos(1), start_pos(2));
+        % Double-check with actual obstacle distances (not inflated grid)
+        start_dists = sqrt((obstacles(:,1) - start_pos(1)).^2 + (obstacles(:,2) - start_pos(2)).^2);
+        if min(start_dists) < obsR
+            error('Start position (%.2f, %.2f) is inside obstacle!', start_pos(1), start_pos(2));
+        end
+        % Otherwise it's just in the inflated region, which is OK
     end
     if getOccupancy(map, goal_pos, 'world')
-        error('Goal position (%.2f, %.2f) is inside obstacle!', goal_pos(1), goal_pos(2));
+        % Double-check with actual obstacle distances
+        goal_dists = sqrt((obstacles(:,1) - goal_pos(1)).^2 + (obstacles(:,2) - goal_pos(2)).^2);
+        if min(goal_dists) < obsR
+            error('Goal position (%.2f, %.2f) is inside obstacle!', goal_pos(1), goal_pos(2));
+        end
+        % Otherwise it's just in the inflated region, which is OK
     end
 
     planner = plannerAStarGrid(map);
