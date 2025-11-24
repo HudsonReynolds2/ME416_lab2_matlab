@@ -22,9 +22,9 @@ function cfg = limo_config()
     cfg.R_min = 0.30;                    % [m] Minimum turning radius for Dubins
     cfg.step = 0.05;                     % [m] Dubins path interpolation step
     
-    % A* grid-based planning parameters - OPTIMIZED VALUES
-    cfg.grid_resolution = 0.15;          % [m] Finer resolution for better navigation
-    cfg.planning_inflation = 0.25;       % [m] Reduced inflation for tighter passages
+    % Grid-based planning parameters - BALANCED FOR ALL ALGORITHMS
+    cfg.grid_resolution = 0.20;          % [m] Coarser grid to ensure paths can be found
+    cfg.planning_inflation = 0.20;       % [m] Moderate inflation - enough for safety but not blocking paths
     
     %% ======================= CONTROL GAINS =======================
     cfg.K_ey = 8.0;                      % Cross-track error gain
@@ -50,44 +50,37 @@ function cfg = limo_config()
     cfg.mazes(1).goal_pos = [5.0, 4.5];
     cfg.mazes(1).arena_bounds = [-0.5 5.5 -1.0 6.0];
     
-    % Maze 2: 3x3 Grid Maze with proper spacing
+    % Maze 2: 3x3 Grid Maze - adjusted for better navigation
     cfg.mazes(2).name = "3x3 Grid Maze";
     interior_obs = [
         1.0 1.0; 2.5 1.0; 4.0 1.0;      % Bottom row
-        0.5 2.5; 1.5 2.5; 3.0 2.5;      % Middle row (shifted from edge)
+        0.7 2.5; 1.7 2.5; 3.3 2.5;      % Middle row - shifted more from edges
         1.0 4.0; 2.5 4.0; 4.0 4.0       % Top row
     ];
-    % Moderate boundary walls
-    wall_spacing = 0.30;  % Medium spacing
-    x_wall = (-0.5:wall_spacing:5.5)';
-    y_wall = (-0.5:wall_spacing:5.0)';
-    bottom = [x_wall, ones(size(x_wall))*-0.5];
+    % Boundary walls with reasonable spacing
+    wall_spacing = 0.35;
+    x_wall = (-0.4:wall_spacing:5.4)';
+    y_wall = (-0.4:wall_spacing:5.0)';
+    bottom = [x_wall, ones(size(x_wall))*-0.4];
     top = [x_wall, ones(size(x_wall))*5.0];
-    left = [ones(size(y_wall))*-0.5, y_wall];
-    right = [ones(size(y_wall))*5.5, y_wall];
+    left = [ones(size(y_wall))*-0.4, y_wall];
+    right = [ones(size(y_wall))*5.4, y_wall];
     cfg.mazes(2).obs = [interior_obs; bottom; top; left; right];
     cfg.mazes(2).start_pos = [0.3, 0.3];
     cfg.mazes(2).goal_pos = [4.7, 4.2];
-    cfg.mazes(2).arena_bounds = [-0.7 5.7 -0.7 5.2];
+    cfg.mazes(2).arena_bounds = [-0.6 5.6 -0.6 5.2];
     
-    % Maze 3: Complex Path - FIXED with accessible goal
+    % Maze 3: Complex Path - simplified for reliable pathfinding
     cfg.mazes(3).name = "Complex Path Maze";
     interior_obs = [
-        % First corridor blockers
-        1.0 1.0; 1.5 1.0; 2.0 1.0;
-        % Force path up
-        2.5 0.5; 3.0 0.5; 3.5 0.5;
-        % Middle section maze
-        0.5 2.5; 1.0 2.5;
-        2.5 2.5; 3.0 2.5; 3.5 2.5;
-        % Upper obstacles
-        1.5 3.5; 2.0 3.5;
-        4.0 3.5; 4.5 3.5;
-        % Right side wall
-        4.0 1.5; 4.0 2.0; 4.0 2.5;
+        % Create a clear S-curve path
+        1.0 0.8; 1.5 0.8; 2.0 0.8; 2.5 0.8;  % Bottom wall
+        0.5 2.0; 1.0 2.0; 1.5 2.0;           % Left middle wall
+        2.5 2.0; 3.0 2.0; 3.5 2.0; 4.0 2.0;  % Right middle wall
+        1.5 3.2; 2.0 3.2; 2.5 3.2;           % Top middle wall
     ];
-    % Dense boundary walls
-    wall_spacing = 0.25;
+    % Boundary walls
+    wall_spacing = 0.30;
     x_wall = (-0.3:wall_spacing:5.2)';
     y_wall = (-0.3:wall_spacing:4.7)';
     bottom = [x_wall, ones(size(x_wall))*-0.3];
@@ -96,7 +89,7 @@ function cfg = limo_config()
     right = [ones(size(y_wall))*5.2, y_wall];
     cfg.mazes(3).obs = [interior_obs; bottom; top; left; right];
     cfg.mazes(3).start_pos = [0.3, 0.3];
-    cfg.mazes(3).goal_pos = [4.8, 4.2];  % Changed to accessible location
+    cfg.mazes(3).goal_pos = [4.8, 4.2];
     cfg.mazes(3).arena_bounds = [-0.5 5.4 -0.5 4.9];
     
     % Default maze selection

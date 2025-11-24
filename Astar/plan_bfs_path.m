@@ -29,29 +29,29 @@ function waypoints = plan_bfs_path(start_pos, goal_pos, obstacles, obsR, cfg)
         setOccupancy(map, coords, 1);
     end
     
-    % Clear regions around start and goal
-    clearance_radius = res * 2;
+    % Force clear start and goal cells
+    setOccupancy(map, start_pos, 0, 'world');
+    setOccupancy(map, goal_pos, 0, 'world');
     
-    % Clear start region
-    for dx = -clearance_radius:res:clearance_radius
-        for dy = -clearance_radius:res:clearance_radius
+    % Clear radius around start and goal
+    clear_radius = res * 3;
+    for angle = 0:30:359
+        for r = res:res:clear_radius
+            dx = r * cosd(angle);
+            dy = r * sind(angle);
+            
             pos = start_pos + [dx, dy];
             if pos(1) >= xmin && pos(1) <= xmax && pos(2) >= ymin && pos(2) <= ymax
-                min_dist = min(sqrt((obstacles(:,1) - pos(1)).^2 + (obstacles(:,2) - pos(2)).^2));
-                if min_dist > obsR
+                dists = sqrt((obstacles(:,1) - pos(1)).^2 + (obstacles(:,2) - pos(2)).^2);
+                if min(dists) > obsR - 0.05
                     setOccupancy(map, pos, 0, 'world');
                 end
             end
-        end
-    end
-    
-    % Clear goal region
-    for dx = -clearance_radius:res:clearance_radius
-        for dy = -clearance_radius:res:clearance_radius
+            
             pos = goal_pos + [dx, dy];
             if pos(1) >= xmin && pos(1) <= xmax && pos(2) >= ymin && pos(2) <= ymax
-                min_dist = min(sqrt((obstacles(:,1) - pos(1)).^2 + (obstacles(:,2) - pos(2)).^2));
-                if min_dist > obsR
+                dists = sqrt((obstacles(:,1) - pos(1)).^2 + (obstacles(:,2) - pos(2)).^2);
+                if min(dists) > obsR - 0.05
                     setOccupancy(map, pos, 0, 'world');
                 end
             end
@@ -62,63 +62,54 @@ function waypoints = plan_bfs_path(start_pos, goal_pos, obstacles, obsR, cfg)
     start_grid = world2grid(map, start_pos);
     goal_grid = world2grid(map, goal_pos);
     
-    % Run BFS with 8-connected movement for smoother paths
-    path_grid = bfs_search_8connected(map, start_grid, goal_grid);
+    % Run simple BFS
+    path_grid = simple_bfs(map, start_grid, goal_grid);
     
     if isempty(path_grid)
         error('BFS could not find a path!');
     end
     
-    % Convert back to world coordinates
+    % Convert to world coordinates
     path = grid2world(map, path_grid);
     
-    % Simplify using smart algorithm
-    waypoints = simplify_path_smart(path, obstacles, obsR, cfg.R_min);
+    % Moderate simplification
+    waypoints = moderate_simplify(path, cfg.R_min);
 end
 
-function path = bfs_search_8connected(map, start, goal)
-    % BFS implementation with 8-connected movement
+function path = simple_bfs(map, start, goal)
+    % Simple 4-connected BFS
     
-    visited = containers.Map('KeyType', 'int64', 'ValueType', 'logical');
-    parent = containers.Map('KeyType', 'int64', 'ValueType', 'any');
-    
-    % Convert grid coords to single integer key
-    gridSize = map.GridSize;
-    toKey = @(pos) int64(pos(1) * 100000 + pos(2));
+    visited = false(map.GridSize);
+    parent = cell(map.GridSize);
     
     queue = {start};
-    visited(toKey(start)) = true;
+    visited(start(1), start(2)) = true;
     
-    % 8-connected neighbors for diagonal movement
-    dirs = [-1 0; 1 0; 0 -1; 0 1;   % Cardinal directions
-            -1 -1; -1 1; 1 -1; 1 1]; % Diagonal directions
+    % 4-connected neighbors (no diagonal)
+    dirs = [-1 0; 1 0; 0 -1; 0 1];
     
     found = false;
-    max_iters = 20000;  % Increased for larger search space
-    iters = 0;
     
-    while ~isempty(queue) && iters < max_iters
-        iters = iters + 1;
+    while ~isempty(queue)
         current = queue{1};
         queue(1) = [];
         
-        % Check if we reached goal
-        if abs(current(1) - goal(1)) <= 1 && abs(current(2) - goal(2)) <= 1
+        % Check if reached goal
+        if current(1) == goal(1) && current(2) == goal(2)
             found = true;
             break;
         end
         
         for i = 1:size(dirs, 1)
             neighbor = current + dirs(i,:);
-            key = toKey(neighbor);
             
-            if visited.isKey(key)
+            % Check bounds
+            if neighbor(1) < 1 || neighbor(1) > map.GridSize(1) || ...
+               neighbor(2) < 1 || neighbor(2) > map.GridSize(2)
                 continue;
             end
             
-            % Check bounds
-            if neighbor(1) < 1 || neighbor(1) > gridSize(1) || ...
-               neighbor(2) < 1 || neighbor(2) > gridSize(2)
+            if visited(neighbor(1), neighbor(2))
                 continue;
             end
             
@@ -128,30 +119,8 @@ function path = bfs_search_8connected(map, start, goal)
                 continue;
             end
             
-            % For diagonal moves, check that cardinal neighbors are also free
-            if i > 4  % Diagonal move
-                cardinal1 = current + dirs(mod(i-5, 4) + 1, :);
-                cardinal2 = current + dirs(mod(i-4, 4) + 1, :);
-                
-                if cardinal1(1) >= 1 && cardinal1(1) <= gridSize(1) && ...
-                   cardinal1(2) >= 1 && cardinal1(2) <= gridSize(2)
-                    world_pos1 = grid2world(map, cardinal1);
-                    if getOccupancy(map, world_pos1, 'world') > 0.5
-                        continue;  % Can't cut corner
-                    end
-                end
-                
-                if cardinal2(1) >= 1 && cardinal2(1) <= gridSize(1) && ...
-                   cardinal2(2) >= 1 && cardinal2(2) <= gridSize(2)
-                    world_pos2 = grid2world(map, cardinal2);
-                    if getOccupancy(map, world_pos2, 'world') > 0.5
-                        continue;  % Can't cut corner
-                    end
-                end
-            end
-            
-            visited(key) = true;
-            parent(key) = current;
+            visited(neighbor(1), neighbor(2)) = true;
+            parent{neighbor(1), neighbor(2)} = current;
             queue{end+1} = neighbor;
         end
     end
@@ -164,95 +133,51 @@ function path = bfs_search_8connected(map, start, goal)
     % Reconstruct path
     path = goal;
     current = goal;
-    max_path_len = 2000;
-    path_len = 1;
     
-    while ~(abs(current(1) - start(1)) <= 1 && abs(current(2) - start(2)) <= 1) && path_len < max_path_len
-        key = toKey(current);
-        if ~parent.isKey(key)
+    while ~(current(1) == start(1) && current(2) == start(2))
+        current = parent{current(1), current(2)};
+        if isempty(current)
             path = [];
             return;
         end
-        current = parent(key);
         path = [current; path];
-        path_len = path_len + 1;
     end
 end
 
-function simplified = simplify_path_smart(path, obstacles, obsR, R_min)
-    % Smart path simplification that maintains navigability
+function simplified = moderate_simplify(path, R_min)
+    % Moderate simplification
     
     if size(path,1) <= 2
         simplified = path;
         return;
     end
     
-    simplified = [path(1,:)];  % Always keep start
+    kept = [path(1,:)];
     
-    i = 1;
-    while i < size(path,1)
-        best_skip = i + 1;
+    for i = 2:(size(path,1)-1)
+        v1 = path(i,:) - kept(end,:);
+        v2 = path(i+1,:) - path(i,:);
         
-        for j = (i+2):min(i+20, size(path,1))
-            if can_connect(path(i,:), path(j,:), obstacles, obsR)
-                best_skip = j;
-            else
-                break;
+        if norm(v1) > 1e-6 && norm(v2) > 1e-6
+            v1_norm = v1 / norm(v1);
+            v2_norm = v2 / norm(v2);
+            angle_change = acos(max(-1, min(1, dot(v1_norm, v2_norm))));
+            
+            if angle_change > deg2rad(15)  % More sensitive
+                kept = [kept; path(i,:)];
             end
         end
-        
-        simplified = [simplified; path(best_skip,:)];
-        i = best_skip;
     end
     
-    if ~isequal(simplified(end,:), path(end,:))
-        simplified = [simplified; path(end,:)];
-    end
-    
-    % Remove collinear points
-    final = [simplified(1,:)];
-    for i = 2:(size(simplified,1)-1)
-        v1 = simplified(i,:) - final(end,:);
-        v2 = simplified(i+1,:) - simplified(i,:);
-        
-        if norm(v1) < 1e-6 || norm(v2) < 1e-6
-            continue;
-        end
-        
-        v1 = v1 / norm(v1);
-        v2 = v2 / norm(v2);
-        
-        angle_change = acos(max(-1, min(1, dot(v1, v2))));
-        
-        if angle_change > deg2rad(15)
-            final = [final; simplified(i,:)];
-        end
-    end
-    
-    final = [final; simplified(end,:)];
+    kept = [kept; path(end,:)];
     
     % Ensure minimum spacing
-    spaced = [final(1,:)];
-    for i = 2:size(final,1)
-        if norm(final(i,:) - spaced(end,:)) > 0.5 * R_min || i == size(final,1)
-            spaced = [spaced; final(i,:)];
+    simplified = [kept(1,:)];
+    
+    for i = 2:size(kept,1)
+        dist = norm(kept(i,:) - simplified(end,:));
+        if dist > 0.6 * R_min || i == size(kept,1)  % Increased spacing
+            simplified = [simplified; kept(i,:)];
         end
     end
-    
-    simplified = spaced;
-end
-
-function can_connect = can_connect(p1, p2, obstacles, obsR)
-    n_checks = ceil(norm(p2 - p1) / 0.1);
-    
-    for alpha = linspace(0, 1, n_checks)
-        point = p1 + alpha * (p2 - p1);
-        dists = sqrt((obstacles(:,1) - point(1)).^2 + (obstacles(:,2) - point(2)).^2);
-        if min(dists) <= obsR + 0.1
-            can_connect = false;
-            return;
-        end
-    end
-    
-    can_connect = true;
 end
