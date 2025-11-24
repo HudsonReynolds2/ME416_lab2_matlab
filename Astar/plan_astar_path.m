@@ -105,18 +105,18 @@ function waypoints = plan_astar_path(start_pos, goal_pos, obstacles, obsR, cfg)
     end
     
     % Simplify path with moderate approach
-    waypoints = moderate_simplify(path, cfg.R_min);
+    waypoints = moderate_simplify(path, cfg.R_min, obstacles, obsR);
 end
 
-function simplified = moderate_simplify(path, R_min)
-    % Moderate simplification - keep enough waypoints for Dubins
+function simplified = moderate_simplify(path, R_min, obstacles, obsR)
+    % Simple but aggressive simplification for Dubins
     
     if size(path,1) <= 2
         simplified = path;
         return;
     end
     
-    % First pass: remove strictly collinear points
+    % Keep waypoints at significant turns AND ensure good spacing
     kept = [path(1,:)];
     
     for i = 2:(size(path,1)-1)
@@ -128,23 +128,22 @@ function simplified = moderate_simplify(path, R_min)
             v2_norm = v2 / norm(v2);
             angle_change = acos(max(-1, min(1, dot(v1_norm, v2_norm))));
             
-            % Keep waypoint if direction changes significantly
-            if angle_change > deg2rad(15)  % More sensitive to direction changes
+            % Keep waypoint if direction changes even slightly (10 degrees)
+            if angle_change > deg2rad(10)
                 kept = [kept; path(i,:)];
             end
         end
     end
     
-    % Always keep goal
     kept = [kept; path(end,:)];
     
-    % Second pass: ensure minimum spacing for Dubins curves
+    % Ensure minimum spacing - MORE conservative
     simplified = [kept(1,:)];
     
     for i = 2:size(kept,1)
         dist = norm(kept(i,:) - simplified(end,:));
-        % Increased minimum spacing to give Dubins more room
-        if dist > 0.6 * R_min || i == size(kept,1)
+        % Keep if decent spacing OR it's the goal
+        if dist > 0.5 * R_min || i == size(kept,1)
             simplified = [simplified; kept(i,:)];
         end
     end

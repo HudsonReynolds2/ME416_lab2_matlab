@@ -77,7 +77,7 @@ function waypoints = plan_dfs_path(start_pos, goal_pos, obstacles, obsR, cfg)
 end
 
 function path = simple_dfs(map, start, goal)
-    % DFS with strong goal bias - prioritize neighbors closest to goal
+    % DFS with goal bias - explore toward goal first
     
     visited = false(map.GridSize);
     parent = cell(map.GridSize);
@@ -89,7 +89,7 @@ function path = simple_dfs(map, start, goal)
     dirs = [-1 0; 1 0; 0 -1; 0 1];
     
     found = false;
-    max_iters = prod(map.GridSize);
+    max_iters = prod(map.GridSize) * 2;
     iters = 0;
     
     while ~isempty(stack) && iters < max_iters
@@ -128,17 +128,20 @@ function path = simple_dfs(map, start, goal)
             neighbors = [neighbors; neighbor];
         end
         
-        % Sort neighbors by distance to goal - push furthest first, nearest LAST
-        % This makes DFS explore toward goal first
+        % Sort by distance to goal - ASCENDING (nearest first in array)
         if ~isempty(neighbors)
             dists = sum((neighbors - repmat(goal, size(neighbors,1), 1)).^2, 2);
-            [~, idx] = sort(dists, 'descend');  % Descending: furthest pushed first
+            [~, idx] = sort(dists, 'ascend');  % nearest first
             
-            for i = 1:size(neighbors,1)
+            % Push in order: furthest to nearest
+            % Since stack is LIFO, nearest (pushed last) will be explored first
+            for i = length(idx):-1:1  % reverse order
                 neighbor = neighbors(idx(i),:);
-                visited(neighbor(1), neighbor(2)) = true;
-                parent{neighbor(1), neighbor(2)} = current;
-                stack{end+1} = neighbor;  % Stack: last in, first out
+                if ~visited(neighbor(1), neighbor(2))
+                    visited(neighbor(1), neighbor(2)) = true;
+                    parent{neighbor(1), neighbor(2)} = current;
+                    stack{end+1} = neighbor;
+                end
             end
         end
     end
